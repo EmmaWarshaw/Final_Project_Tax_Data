@@ -93,13 +93,19 @@ overall_trend = eitc_data %>%
     total_claims = city_eitc + state_eitc + noncust_eitc)
 
 overall_point = overall_trend %>%
-  ggplot(aes(x = tax_year, y = total_claims, color = borough)) + 
-  geom_point()
+  ggplot(aes(x = tax_year, y = total_claims, color = borough, group = 1)) + 
+  geom_point() + geom_line()
 
 ggplotly(overall_point)
 ```
 
 This graph scales with population of each borough, but it gives a good overall look at the trend. 
+
+##Proportion of Each Borough Filing a Claim
+
+The graph above shows the overall trend in the number of claims filed per borough, but this relationship scales with population of each borough.  For instance, Brooklyn is the most populace borough, so it logically follows that the most claims were filed in that borough.  
+
+Instead of looking at the trend, it would be helpful to understand what percentage of each borough's population files a claim.  [New York State Data.Ny.Gov](https://www.nyc.gov/site/planning/planning-level/nyc-population/nyc-population-current-estimates.page) extrapolates estimated borough populace each year, basing their projections on Census data.  I'm going to pull these estimates into a dataframe, then find the percentage of claimants in each borough.    
 
 ##Average Claim Amount 
 
@@ -122,7 +128,7 @@ average_claim = eitc_data %>%
   group_by(tax_year, borough)
 
 average_claim %>%
-  plot_ly(y = ~eitc, color = ~borough, type = "box", colors = "viridis") 
+  plot_ly(y = ~eitc, color = ~borough, type = "box", colors = "viridis")
 
 average_claim %>%
   plot_ly(y = ~noncust_eitc, color = ~borough, type = "box", colors = "viridis") 
