@@ -1,0 +1,130 @@
+---
+title: "tax_data"
+author: "Emma Warshaw"
+date: "2022-11-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(rvest)
+library(httr)
+library(plotly)
+```
+
+##Import the EITC Data Using an API
+
+This data was provided by [New York State Data.Ny.Gov](https://data.ny.gov/Government-Finance/Earned-Income-Tax-Credit-EITC-Claims-by-Credit-Typ/6q7b-8vuf).  The original data set includes information for all counties in New York State.  For purposes of this project, we're only interested in New York City, and the five counties that correspond to each boroughs.   
+
+```{r}
+tax_data = 
+  GET("https://data.ny.gov/resource/6q7b-8vuf.json", query = list("$limit" = 5000)) %>% 
+  content("text") %>% 
+  jsonlite::fromJSON() %>% 
+  as_tibble()
+```
+
+##Tidy the data 
+
+There are several columns that we won't need for this analysis.  The `notes`, `place_of_residence`, and `place_of_residence_sort_order` will be dropped because they either don't contain any data (i.e. notes) or they're redundant of other columns.  
+
+Next, I'll filter this data to only show the counties withing New York City: Bronx, Kings, Manhattan, Queens and Richmond.  For consistency across the project, I'll then convert the county names to their corresponding borough names.  There are two that need to change: Kings County corresponds to Brooklyn and Richmond County corresponds to Staten Island. 
+
+Next, I'll clean up the `credit_type` variable names for ease of use, then I'll coerce character columns to numeric as needed.
+
+Finally, the `credit_amount_claimed_in_thousands` needs to be multiplied by 1000 to get the actual dollar amount claimed in each borough.  I'm also going to rename `county` to `borough`.   
+
+The data is now cleaned, ready for use, and a tidied csv file is available for the group to use.  
+
+```{r}
+eitc_data = tax_data %>%
+  select(-c(notes, place_of_residence, place_of_residence_sort_order)) %>% 
+  filter(county %in% c("Bronx", "Kings", "Manhattan", "Queens", "Richmond")) %>% 
+  mutate(county = case_when(
+    county == 'Kings' ~ 'Brooklyn', 
+    county == 'Richmond' ~ 'Staten Island', 
+    county == 'Bronx' ~ 'Bronx',
+    county == 'Manhattan' ~ 'Manhattan',
+    county == 'Queens' ~ 'Queens'
+  )) %>% 
+  mutate(credit_type = case_when(
+    credit_type == 'NYC EITC' ~ 'City EITC',
+    credit_type == 'NYS EITC' ~ 'State EITC',
+    credit_type == 'NYS Noncustodial Parent EITC' ~ 'Noncust. EITC'
+  )) %>% 
+  mutate(
+    credit_amount_claimed_in_thousands = as.numeric(credit_amount_claimed_in_thousands), 
+    number_of_claims = as.numeric(number_of_claims),
+    average_credit = as.numeric(average_credit)) %>% 
+  mutate(credit_amount_claimed_in_thousands = credit_amount_claimed_in_thousands * 1000) %>% 
+  rename(boro_credit_total = credit_amount_claimed_in_thousands, 
+         borough = county)
+
+write.csv(eitc_data, "/Users/emmawarshaw/Desktop/Data Science 1/eitc_data.csv", row.names = FALSE)
+```
+
+##Types of Tax Credits
+
+There are two different types of EITC in this data set, with one type having two categories.  EITC is offered by both the state and the city, although the state tends to give a higher credit: claimants can file for both of these.  The Noncustodial Parent EITC is offered exclusively by the state and claimants can only file for this credit alone.  If they claim Noncustodial Parent EITC, it disqualifies them from regular EITC eligibility.  The qualification criteria do not overlap but the underlying economic considerations are the same.  
+
+Earned Income Tax Credit (EITC) --> For those who have worked and earned income under $57,414.  It's designed primarily for low-to-moderate income individuals and families to get a tax break.  The amount of the credit is dependent on income.  There are two different forms of this credit: one for state and one for the city.  Eligbility criteria is the same.     
+
+Noncustodial Parent EITC --> For those who meet the income threshold and have a child, but do not have custody of the child.  This is exclusively offered by the state.
+
+##Overall Trends
+
+First, I'll create a graph to show the number of claims in each borough from 2006 onward.  Although the data goes back as far as 1994, the City EITC wasn't introduced until 2004 and the Noncustodial Parent EITC wasn't introduced until 2006.  For consistency, we'll look at 2006 onward for an idea of the overall number of claims made each year in each borough.      
+
+```{r}
+overall_trend = eitc_data %>% 
+  filter(tax_year %in% (2006:2020)) %>%
+  select(-boro_credit_total, -average_credit) %>% 
+  arrange(borough, tax_year) %>%
+  pivot_wider(
+    names_from = credit_type,
+    values_from = number_of_claims
+  ) %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    total_claims = city_eitc + state_eitc + noncust_eitc)
+
+overall_point = overall_trend %>%
+  ggplot(aes(x = tax_year, y = total_claims, color = borough)) + 
+  geom_point()
+
+ggplotly(overall_point)
+```
+
+This graph scales with population of each borough, but it gives a good overall look at the trend. 
+
+##Average Claim Amount 
+
+Next, we'll look at the average claim amount 2016-2018 for each borough, stratifying by credit type.  Since our primary Greenspace data set only includes data from 2016-2018, we're going to limit our analysis to these years.  Since the qualification criteria is the same for City and State EITC, I'm going to add the amounts to create a single category called `EITC`.   
+
+```{r}
+average_claim = eitc_data %>%
+  filter(tax_year %in% (2016:2018)) %>%
+  select(-boro_credit_total, -number_of_claims) %>% 
+  arrange(borough, tax_year) %>%
+  pivot_wider(
+    names_from = credit_type,
+    values_from = average_credit
+  ) %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    eitc = city_eitc + state_eitc
+  ) %>% 
+  select(tax_year, borough, noncust_eitc, eitc) %>%
+  group_by(tax_year, borough)
+
+average_claim %>%
+  plot_ly(y = ~eitc, color = ~borough, type = "box", colors = "viridis") 
+
+average_claim %>%
+  plot_ly(y = ~noncust_eitc, color = ~borough, type = "box", colors = "viridis") 
+
+```
