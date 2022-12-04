@@ -5,20 +5,32 @@ date: "2022-11-30"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-```{r}
+```{r, include = FALSE, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(rvest)
 library(httr)
 library(plotly)
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	warning = FALSE,
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
 ```
+
 
 ##Import the EITC Data Using an API
 
-This data was provided by [New York State Data.Ny.Gov](https://data.ny.gov/Government-Finance/Earned-Income-Tax-Credit-EITC-Claims-by-Credit-Typ/6q7b-8vuf).  The original data set includes information for all counties in New York State.  For purposes of this project, we're only interested in New York City, and the five counties that correspond to each boroughs.   
+This data was provided by [New York State Data.Ny.Gov](https://data.ny.gov/Government-Finance/Earned-Income-Tax-Credit-EITC-Claims-by-Credit-Typ/6q7b-8vuf).  The original data set includes information for all counties in New York State.  For purposes of this project, we're only interested in New York City, and the five counties that correspond to each borough.   
 
 ```{r}
 tax_data = 
@@ -32,13 +44,11 @@ tax_data =
 
 There are several columns that we won't need for this analysis.  The `notes`, `place_of_residence`, and `place_of_residence_sort_order` will be dropped because they either don't contain any data (i.e. notes) or they're redundant of other columns.  
 
-Next, I'll filter this data to only show the counties withing New York City: Bronx, Kings, Manhattan, Queens and Richmond.  For consistency across the project, I'll then convert the county names to their corresponding borough names.  There are two that need to change: Kings County corresponds to Brooklyn and Richmond County corresponds to Staten Island. 
+Next, we'll filter this data to only show the counties withing New York City: Bronx, Kings, Manhattan, Queens and Richmond.  For consistency across the project, we'll then convert the county names to their corresponding borough names.  There are two that need to change: Kings County corresponds to Brooklyn and Richmond County corresponds to Staten Island. 
 
-Next, I'll clean up the `credit_type` variable names for ease of use, then I'll coerce character columns to numeric as needed.
+Next, we'll clean up the `credit_type` variable names for ease of use, then we'll coerce character columns to numeric as needed.
 
 Finally, the `credit_amount_claimed_in_thousands` needs to be multiplied by 1000 to get the actual dollar amount claimed in each borough.  I'm also going to rename `county` to `borough`.   
-
-The data is now cleaned, ready for use, and a tidied csv file is available for the group to use.  
 
 ```{r}
 eitc_data = tax_data %>%
@@ -77,7 +87,7 @@ Noncustodial Parent EITC --> For those who meet the income threshold and have a 
 
 ##Overall Trends
 
-First, I'll create a graph to show the number of claims in each borough from 2006 onward.  Although the data goes back as far as 1994, the City EITC wasn't introduced until 2004 and the Noncustodial Parent EITC wasn't introduced until 2006.  For consistency, we'll look at 2006 onward for an idea of the overall number of claims made each year in each borough.      
+First, we'll create a graph to show the number of claims in each borough from 2006 onward.  Although the data goes back as far as 1994, the City EITC wasn't introduced until 2004 and the Noncustodial Parent EITC wasn't introduced until 2006.  For consistency, we'll look at 2006 onward for an idea of the overall number of claims made each year in each borough.      
 
 ```{r}
 overall_trend = eitc_data %>% 
@@ -105,11 +115,13 @@ This graph scales with population of each borough, but it gives a good overall l
 
 The graph above shows the overall trend in the number of claims filed per borough, but this relationship scales with population of each borough.  For instance, Brooklyn is the most populace borough, so it logically follows that the most claims were filed in that borough.  
 
-Instead of looking at the trend, it would be helpful to understand what percentage of each borough's population files a claim.  [New York State Data.Ny.Gov](https://www.nyc.gov/site/planning/planning-level/nyc-population/nyc-population-current-estimates.page) extrapolates estimated borough populace each year, basing their projections on Census data.  I'm going to pull these estimates into a dataframe, then find the percentage of claimants in each borough.    
+Instead of looking at the trend, it would be helpful to understand what percentage of each borough's population files a claim.  [New York State Data.Ny.Gov](https://www.nyc.gov/site/planning/planning-level/nyc-population/nyc-population-current-estimates.page) extrapolates estimated borough populace each year, basing their projections on Census data.  We're going to pull these estimates into a dataframe, then find the percentage of claimants in each borough.  
+
+We'll limit the time frame from 2016-2018, the same years that the `Greenspace` data were collected.         
 
 ##Average Claim Amount 
 
-Next, we'll look at the average claim amount 2016-2018 for each borough, stratifying by credit type.  Since our primary Greenspace data set only includes data from 2016-2018, we're going to limit our analysis to these years.  Since the qualification criteria is the same for City and State EITC, I'm going to add the amounts to create a single category called `EITC`.   
+Next, we'll look at the average claim amount 2016-2018 for each borough, stratifying by credit type.  Since our primary `Greenspace` data set only includes data from 2016-2018, we're going to limit our analysis to these years.  Since the qualification criteria is the same for City and State EITC, we're going to add the amounts to create a single category called `EITC`.   
 
 ```{r}
 average_claim = eitc_data %>%
