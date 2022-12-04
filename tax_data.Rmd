@@ -48,7 +48,7 @@ Next, we'll filter this data to only show the counties withing New York City: Br
 
 Next, we'll clean up the `credit_type` variable names for ease of use, then we'll coerce character columns to numeric as needed.
 
-Finally, the `credit_amount_claimed_in_thousands` needs to be multiplied by 1000 to get the actual dollar amount claimed in each borough.  I'm also going to rename `county` to `borough`.   
+Finally, the `credit_amount_claimed_in_thousands` needs to be multiplied by 1000 to get the actual dollar amount claimed in each borough.  I'm also going to rename `county` to `borough`for consistency across the project.   
 
 ```{r}
 eitc_data = tax_data %>%
@@ -109,15 +109,54 @@ overall_point = overall_trend %>%
 ggplotly(overall_point)
 ```
 
-This graph scales with population of each borough, but it gives a good overall look at the trend. 
-
 ##Proportion of Each Borough Filing a Claim
 
 The graph above shows the overall trend in the number of claims filed per borough, but this relationship scales with population of each borough.  For instance, Brooklyn is the most populace borough, so it logically follows that the most claims were filed in that borough.  
 
-Instead of looking at the trend, it would be helpful to understand what percentage of each borough's population files a claim.  [New York State Data.Ny.Gov](https://www.nyc.gov/site/planning/planning-level/nyc-population/nyc-population-current-estimates.page) extrapolates estimated borough populace each year, basing their projections on Census data.  We're going to pull these estimates into a dataframe, then find the percentage of claimants in each borough.  
+Instead of looking at the trend, it would be helpful to understand what percentage of each borough's population files a claim.  Each year, [The US Census Bureau](https://www.nyc.gov/site/planning/planning-level/nyc-population/nyc-population-current-estimates.page) extrapolates estimated county populace, basing their projections on the most recent Census data and vital statistics.  We're going to pull these estimates into a dataframe, merge it with our tax data, then find the proportion of claimants in each borough.  
 
-We'll limit the time frame from 2016-2018, the same years that the `Greenspace` data were collected.         
+We'll limit the time frame from 2016-2018, the same years that the `Greenspace` data were collected.  The code book for this data can be accessed [here](https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2010-2019/cc-est2019-agesex.pdf). 
+
+```{r}
+population_estimates = read.csv("./data/census_pop_estimations copy.csv")
+
+nyc_estimates = population_estimates %>% 
+  filter(CTYNAME %in% c("Bronx County", "Kings County", "New York County", "Queens County", "Richmond County")) %>% 
+  filter(YEAR %in% c("9", "10", "11")) %>% 
+  select(c("CTYNAME", "YEAR", "POPESTIMATE")) %>% 
+  janitor::clean_names() %>% 
+  rename(borough = ctyname) %>% 
+  mutate(borough = case_when(
+    borough == 'Kings County' ~ 'Brooklyn', 
+    borough == 'Richmond County' ~ 'Staten Island', 
+    borough == 'Bronx County' ~ 'Bronx',
+    borough == 'New York County' ~ 'Manhattan',
+    borough == 'Queens County' ~ 'Queens'
+  )) %>% 
+  rename(tax_year = year) %>% 
+  mutate(tax_year = case_when(
+    tax_year == "9" ~ "2016",
+    tax_year == "10" ~ "2017",
+    tax_year == "11" ~ "2018"
+  )) %>% 
+  arrange(borough, tax_year)
+
+two_year_trend = overall_trend %>% 
+  filter(tax_year %in% c("2016", "2017", "2018")) %>% 
+  arrange(borough, tax_year) %>% 
+  select(borough, tax_year, city_eitc, state_eitc, noncust_eitc, total_claims)
+
+nyc_trend = left_join(two_year_trend, nyc_estimates, by = c("borough" = "borough", "tax_year" = "tax_year"))
+
+nyc_trend = nyc_trend %>% 
+  mutate(
+    prop_claims = (total_claims/popestimate), 
+    prop_claims = round(prop_claims, 4))
+
+nyc_trend %>%
+  plot_ly(y = ~prop_claims, color = ~borough, type = "box", colors = "viridis")
+```
+
 
 ##Average Claim Amount 
 
@@ -146,3 +185,5 @@ average_claim %>%
   plot_ly(y = ~noncust_eitc, color = ~borough, type = "box", colors = "viridis") 
 
 ```
+
+##Use ANOVA for these
