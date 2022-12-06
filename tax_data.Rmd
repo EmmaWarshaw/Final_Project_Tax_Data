@@ -1,5 +1,5 @@
 ---
-title: "tax_data"
+title: "Earned Income Tax Data (EITC) and Population"
 author: "Emma Warshaw"
 date: "2022-11-30"
 output: html_document
@@ -10,6 +10,7 @@ library(tidyverse)
 library(rvest)
 library(httr)
 library(plotly)
+library(patchwork)
 
 knitr::opts_chunk$set(
 	echo = TRUE,
@@ -32,7 +33,7 @@ scale_fill_discrete = scale_fill_viridis_d
 
 This data was provided by [New York State Data.Ny.Gov](https://data.ny.gov/Government-Finance/Earned-Income-Tax-Credit-EITC-Claims-by-Credit-Typ/6q7b-8vuf).  The original data set includes information for all counties in New York State.  For purposes of this project, we're only interested in New York City, and the five counties that correspond to each borough.   
 
-```{r}
+```{r, echo = FALSE}
 tax_data = 
   GET("https://data.ny.gov/resource/6q7b-8vuf.json", query = list("$limit" = 5000)) %>% 
   content("text") %>% 
@@ -50,7 +51,7 @@ Next, we'll clean up the `credit_type` variable names for ease of use, then we'l
 
 Finally, the `credit_amount_claimed_in_thousands` needs to be multiplied by 1000 to get the actual dollar amount claimed in each borough.  I'm also going to rename `county` to `borough`for consistency across the project.   
 
-```{r}
+```{r, echo = FALSE}
 eitc_data = tax_data %>%
   select(-c(notes, place_of_residence, place_of_residence_sort_order)) %>% 
   filter(county %in% c("Bronx", "Kings", "Manhattan", "Queens", "Richmond")) %>% 
@@ -89,7 +90,7 @@ Noncustodial Parent EITC --> For those who meet the income threshold and have a 
 
 First, we'll create a graph to show the number of claims in each borough from 2006 onward.  Although the data goes back as far as 1994, the City EITC wasn't introduced until 2004 and the Noncustodial Parent EITC wasn't introduced until 2006.  For consistency, we'll look at 2006 onward for an idea of the overall number of claims made each year in each borough.      
 
-```{r}
+```{r, echo = FALSE}
 overall_trend = eitc_data %>% 
   filter(tax_year %in% (2006:2020)) %>%
   select(-boro_credit_total, -average_credit) %>% 
@@ -104,7 +105,13 @@ overall_trend = eitc_data %>%
 
 overall_point = overall_trend %>%
   ggplot(aes(x = tax_year, y = total_claims, color = borough, group = 1)) + 
-  geom_point() + geom_line()
+  geom_point() + geom_line() + 
+  labs(
+    title = "Number of Claims Per Borough, 2006-2020", 
+    x = "Tax year", 
+    y = "Number of Claims", 
+    caption = "Data from NYC Open Data"
+  )
 
 ggplotly(overall_point)
 ```
@@ -117,7 +124,7 @@ Instead of looking at the trend, it would be helpful to understand what percenta
 
 We'll limit the time frame from 2016-2018, the same years that the `Greenspace` data were collected.  The code book for this data can be accessed [here](https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2010-2019/cc-est2019-agesex.pdf). 
 
-```{r}
+```{r, echo = FALSE}
 population_estimates = read.csv("./data/census_pop_estimations copy.csv")
 
 nyc_estimates = population_estimates %>% 
@@ -154,7 +161,25 @@ nyc_trend = nyc_trend %>%
     prop_claims = round(prop_claims, 4))
 
 nyc_trend %>%
-  plot_ly(y = ~prop_claims, color = ~borough, type = "box", colors = "viridis")
+  plot_ly(y = ~prop_claims, color = ~borough, type = "box", colors = "viridis") %>% 
+  layout(xaxis = list(title = 'Borough'), yaxis = list(title = 'Proportion Filing Claim'), title = "Average Proportion Filing EITC Claim by Borough, 2016-2018")
+```
+
+##Hypothesis Testing: Proportion of Claimants
+
+Graphically, we can see that there is a difference in the proportion of claimants in each borough.  Statistically, we have to establish the significance of this finding. 
+
+First we'll run ANOVA to determine if the group proportions are different.  
+
+Next, we'll run two-sample t-tests.  Across the project, we've chosen to use Manhattan as a reference group, so we need to test if the means of every other borough are statistically different to Manhattan.  
+
+```{r}
+anova_prop = aov(prop_claims ~ borough, data = nyc_trend)
+
+summary(anova_prop)
+
+TukeyHSD(aov(prop_claims ~ borough, data = nyc_trend))
+
 ```
 
 
@@ -162,7 +187,7 @@ nyc_trend %>%
 
 Next, we'll look at the average claim amount 2016-2018 for each borough, stratifying by credit type.  Since our primary `Greenspace` data set only includes data from 2016-2018, we're going to limit our analysis to these years.  Since the qualification criteria is the same for City and State EITC, we're going to add the amounts to create a single category called `EITC`.   
 
-```{r}
+```{r, echo = FALSE}
 average_claim = eitc_data %>%
   filter(tax_year %in% (2016:2018)) %>%
   select(-boro_credit_total, -number_of_claims) %>% 
@@ -178,11 +203,17 @@ average_claim = eitc_data %>%
   select(tax_year, borough, noncust_eitc, eitc) %>%
   group_by(tax_year, borough)
 
-average_claim %>%
-  plot_ly(y = ~eitc, color = ~borough, type = "box", colors = "viridis")
+eitc_distribution = average_claim %>%
+  plot_ly(y = ~eitc, color = ~borough, type = "box", colors = "viridis") %>% 
+  layout(xaxis = list(title = 'Borough'), yaxis = list(title = 'EITC 2016-2018 (dollars)'), title = "Average EITC Credit Amount from 2016-2018, by Borough")
 
-average_claim %>%
-  plot_ly(y = ~noncust_eitc, color = ~borough, type = "box", colors = "viridis") 
+
+noncust_eitc_distribution = average_claim %>%
+  plot_ly(y = ~noncust_eitc, color = ~borough, type = "box", colors = "viridis") %>% 
+  layout(xaxis = list(title = 'Borough'), yaxis = list(title = 'Noncustodial EITC, 2016-2018 (dollars)'), title = "Average Noncustodial EITC Credit Amount from 2016-2018, by Borough")
+
+eitc_distribution
+noncust_eitc_distribution
 
 ```
 
