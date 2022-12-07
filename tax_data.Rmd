@@ -27,7 +27,17 @@ options(
 scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
 ```
+We're interested in understanding the financial status of residents in each borough, ideally to understand differences in relation to rooftop greenspace in each borough.  
 
+One way to get a general understanding of socioeconomic status in each borough is to look at Earned Income Tax Credit (EITC) data. EITC is designed to give a tax credit to low-to-moderate income workers and families.  Specific qualifications and income thresholds can be found [here](https://www1.nyc.gov/assets/dca/downloads/pdf/consumers/Tax-Credit-Fast-Facts.pdf).   
+
+There are two different types of EITC in this data set, with one type having two categories.  
+
+EITC is offered by both the state and the city, although the state tends to give a higher credit: claimants can file for both of these.  
+
+The Noncustodial Parent EITC is offered exclusively by the state and claimants can only file for this credit alone.  If they claim Noncustodial Parent EITC, it disqualifies them from regular EITC eligibility.  
+
+The qualification criteria do not overlap but the underlying economic considerations are the same.  
 
 ##Import the EITC Data Using an API
 
@@ -73,18 +83,13 @@ eitc_data = tax_data %>%
     average_credit = as.numeric(average_credit)) %>% 
   mutate(credit_amount_claimed_in_thousands = credit_amount_claimed_in_thousands * 1000) %>% 
   rename(boro_credit_total = credit_amount_claimed_in_thousands, 
-         borough = county)
+         borough = county) %>% 
+  mutate(
+    borough = as_factor(borough),
+    borough = fct_relevel(borough , "Manhattan"))
 
 write.csv(eitc_data, "/Users/emmawarshaw/Desktop/Data Science 1/eitc_data.csv", row.names = FALSE)
 ```
-
-##Types of Tax Credits
-
-There are two different types of EITC in this data set, with one type having two categories.  EITC is offered by both the state and the city, although the state tends to give a higher credit: claimants can file for both of these.  The Noncustodial Parent EITC is offered exclusively by the state and claimants can only file for this credit alone.  If they claim Noncustodial Parent EITC, it disqualifies them from regular EITC eligibility.  The qualification criteria do not overlap but the underlying economic considerations are the same.  
-
-Earned Income Tax Credit (EITC) --> For those who have worked and earned income under $57,414.  It's designed primarily for low-to-moderate income individuals and families to get a tax break.  The amount of the credit is dependent on income.  There are two different forms of this credit: one for state and one for the city.  Eligbility criteria is the same.     
-
-Noncustodial Parent EITC --> For those who meet the income threshold and have a child, but do not have custody of the child.  This is exclusively offered by the state.
 
 ##Overall Trends
 
@@ -146,7 +151,10 @@ nyc_estimates = population_estimates %>%
     tax_year == "10" ~ "2017",
     tax_year == "11" ~ "2018"
   )) %>% 
-  arrange(borough, tax_year)
+  arrange(borough, tax_year) %>% 
+  mutate(
+    borough = as_factor(borough),
+    borough = fct_relevel(borough , "Manhattan"))
 
 two_year_trend = overall_trend %>% 
   filter(tax_year %in% c("2016", "2017", "2018")) %>% 
@@ -158,7 +166,8 @@ nyc_trend = left_join(two_year_trend, nyc_estimates, by = c("borough" = "borough
 nyc_trend = nyc_trend %>% 
   mutate(
     prop_claims = (total_claims/popestimate), 
-    prop_claims = round(prop_claims, 4))
+    prop_claims = round(prop_claims, 4), 
+    borough = as_factor(borough))
 
 nyc_trend %>%
   plot_ly(y = ~prop_claims, color = ~borough, type = "box", colors = "viridis") %>% 
@@ -169,19 +178,21 @@ nyc_trend %>%
 
 Graphically, we can see that there is a difference in the proportion of claimants in each borough.  Statistically, we have to establish the significance of this finding. 
 
-First we'll run ANOVA to determine if the group proportions are different.  
+First we'll run an ANOVA F-test to determine if the group proportions are different.  For purposes of this project, we're using Manhattan as our universal reference group, so we'll then see which proportions differ from Manhattan.     
 
-Next, we'll run two-sample t-tests.  Across the project, we've chosen to use Manhattan as a reference group, so we need to test if the means of every other borough are statistically different to Manhattan.  
+```{r, echo = FALSE}
+lm.model = lm(prop_claims ~ borough, data = nyc_trend)
 
-```{r}
-anova_prop = aov(prop_claims ~ borough, data = nyc_trend)
+model_output = summary(lm.model)
 
-summary(anova_prop)
-
-TukeyHSD(aov(prop_claims ~ borough, data = nyc_trend))
-
+model_output %>% 
+  broom::tidy() %>% 
+  knitr::kable()
 ```
 
+The F-test gives a p-value far less than our accepted significance level of 0.05, so we know there is at least one proportion that is different among the 5 borough.  
+
+When we analyze against a reference group, we see that Bronx, Brooklyn and Queens are all statistically different from Manhattan.  Using our visualizations, we see that the proportion of claimants is higher in these boroughs.  
 
 ##Average Claim Amount 
 
@@ -217,4 +228,46 @@ noncust_eitc_distribution
 
 ```
 
-##Use ANOVA for these
+##Hypothesis Testing: Proportion of Claimants
+
+Similar to the population proportions, we need to test if these difference are significant. 
+
+We'll start with the EITC data and run an ANOVA F-test to determine if the amount claimed is different in each borough.  We'll then use Manhattan as our reference group to see which boroughs are paying a different amount. 
+
+```{r, echo = FALSE}
+eitc.lm.model = lm(eitc ~ borough, data = average_claim)
+
+eitc_model_output = summary(eitc.lm.model)
+
+eitc_model_output %>% 
+  broom::tidy() %>% 
+  knitr::kable()
+```
+
+The F-test gives a p-value far less than our accepted significance level of 0.05, so we know there is at least one average amount that is different among the 5 borough.  
+
+When we analyze against a reference group, we see that Bronx, Brooklyn, Queens and Staten Island are all statistically different from Manhattan.  Using our visualizations, we see that the average amount of EITC credit is higher in these boroughs
+
+Repeating the same process, we'll now run the same model for Noncustodial EITC: 
+
+```{r}
+noncust.lm.model = lm(noncust_eitc ~ borough, data = average_claim)
+
+noncust_model_output = summary(noncust.lm.model)
+
+noncust_model_output %>% 
+  broom::tidy() %>% 
+  knitr::kable()
+```
+
+The F-test gives a p-value of 0.4237.  For Noncustodial EITC, there is no statistical difference in the average amount of credit received among the 5 boroughs.   
+
+##Conclusion
+
+Based on this tax data, we can see that the overall trend in the number of claims filed between 2006-2020 scales directly with the population of each borough.  When find the proportion of claimants in each borough, however, we see that there is a difference.  When compared to Manhattan, the Bronx, Brooklyn, and Queens all file a higher proportion of claims.  
+
+Moving on to average dollar amount of the credit in each borough, there's no statstical difference in Noncustodial EITC among the boroughs.  
+
+For EITC between 2016-2018, however, the Bronx, Brooklyn, Queens and Staten Island all claims a higher dollar amount in credit, on average.  
+
+From our visualizations, we can see that Bronx residents files the highest proportion of claims and receive the highest dollar amount in credit.  
